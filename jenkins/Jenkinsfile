@@ -1,0 +1,71 @@
+pipeline {
+  agent any
+  stages {
+    stage('Checkout') {
+      steps { checkout scm }
+    }
+    stage('Terraform Init & Plan') {
+      steps {
+        dir('terraform') {
+          sh 'terraform init'
+          sh 'terraform plan -out=plan.out'
+        }
+      }
+    }
+    stage('Terraform Apply') {
+      steps {
+        dir('terraform') {
+          sh 'terraform apply -auto-approve plan.out'
+        }
+      }
+    }
+    stage('Build & Push Docker Image') {
+      environment {
+        REGISTRY = 'myregistry.azurecr.io'
+        IMAGE    = 'myapp'
+      }
+      steps {
+        sh "docker build -t $REGISTRY/$IMAGE:${BUILD_NUMBER} ."
+        sh "az acr login --name myregistry"
+        sh "docker push $REGISTRY/$IMAGE:${BUILD_NUMBER}"
+      }
+    }
+    stage('Deploy to Blue & Green') {
+      steps {
+        script {
+          def clusters = ['blue', 'green']
+          clusters.each { color ->
+            sh "az aks get-credentials -g ${TF_VAR_resource_group_name} -n ${TF_VAR_prefix}-${color} --overwrite-existing"
+            sh "kubectl apply -f k8s-manifests/deployment.yaml"
+            sh "kubectl set image deployment/myapp myapp=$REGISTRY/$IMAGE:${BUILD_NUMBER}"
+            sh "kubectl apply -f k8s-manifests/service.yaml"
+          }
+        }
+      }
+    }
+    stage('Smoke Test Green') {
+      steps {
+        script {
+          def url = "http://${module.appgw.appgw_public_ip}"
+          sh "curl --fail $url || exit 1"
+        }
+      }
+    }
+    stage('Switch Traffic to Green') {
+      steps {
+        dir('terraform') {
+          sh "terraform apply -auto-approve -var=active_pool=green"
+        }
+      }
+    }
+  }
+  post {
+    success {
+      echo 'Deployment successful!'
+    }
+    failure {
+      echo 'Deployment failed. Rolling back.'
+      dir('terraform') { sh "terraform apply -auto-approve -var=active_pool=blue" }
+    }
+  }
+}

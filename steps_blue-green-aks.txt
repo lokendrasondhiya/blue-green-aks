@@ -1,0 +1,96 @@
+Here’s a high-level checklist to get everything up and running:
+
+1. Prerequisites
+
+   * Install and configure the Azure CLI, Terraform (v1.x), Docker, and a Jenkins agent on your workstation/CI server.
+   * Ensure you’re logged in to Azure (`az login`) and have contributor access to your target subscription.
+   * Create or identify an Azure Container Registry (ACR) and note its name.
+
+2. Download & Unpack
+
+   * Download and unzip the project ZIP (e.g. `blue-green-aks.zip`).
+   * Inside, you’ll see the `terraform/`, `k8s-manifests/`, and `jenkins/` folders.
+
+3. Configure Terraform Variables
+
+   * Edit `terraform/terraform.tfvars`:
+
+     * Set `resource_group_name`, `location`, `prefix`, `address_space`, `subnet_prefixes`.
+     * Leave `blue_ingress_ip`/`green_ingress_ip` blank for now.
+     * Keep `active_pool = "blue"`.
+
+4. Provision Infrastructure
+
+   ```bash
+   cd blue-green-aks/terraform
+   terraform init
+   terraform apply -auto-approve
+   ```
+
+   * This creates: resource group, VNet, two subnets, two AKS clusters (2 nodes each), and the Application Gateway.
+
+5. Capture Ingress IPs
+
+   * After apply completes, note the two AKS clusters’ ingress IPs (from the App Gateway’s backend pools or via `kubectl get service ingress`).
+   * Update `terraform.tfvars` with those IPs in `blue_ingress_ip` and `green_ingress_ip`.
+
+6. Re-Apply with Ingress IPs
+
+   ```bash
+   terraform apply -auto-approve
+   ```
+
+   * This wires up the Application Gateway pools correctly.
+
+7. Configure Jenkins
+
+   * In Jenkins, install the Kubernetes, Azure CLI, Terraform, and Docker plugins.
+   * Create credentials:
+
+     * Azure Service Principal (Client ID/Secret/Tenant) for `az login` in pipelines.
+     * Docker/ACR credentials for pushing images.
+
+8. Import Pipeline
+
+   * Point your Jenkins job to this repo’s `jenkins/Jenkinsfile`.
+   * Set the following environment vars in the job (or via a credentials-binding plugin):
+
+     ```
+     TF_VAR_resource_group_name=bgdemo-rg
+     TF_VAR_location=eastus
+     TF_VAR_prefix=bgdemo
+     TF_VAR_address_space=10.1.0.0/16
+     TF_VAR_subnet_prefixes=["10.1.1.0/24","10.1.2.0/24"]
+     TF_VAR_node_count=2
+     TF_VAR_vm_size=Standard_DS2_v2
+     TF_VAR_blue_ingress_ip=<from step 5>
+     TF_VAR_green_ingress_ip=<from step 5>
+     ```
+   * Ensure Docker is logged into your ACR in the Jenkins agent.
+
+9. Run the Pipeline
+
+   * Kick off the Jenkins job. It will:
+
+     1. Re-run Terraform (plan & apply).
+     2. Build and push your Docker image.
+     3. Deploy to both AKS clusters.
+     4. Smoke-test Green.
+     5. Switch Application Gateway traffic to Green.
+
+10. Verify & Rollback
+
+    * Browse to the App Gateway’s public IP; confirm your app is live on Green.
+    * If something fails, the pipeline’s `post` step will automatically flip back to Blue.
+
+11. Cleanup (Optional)
+
+    ```bash
+    cd blue-green-aks/terraform
+    terraform destroy -auto-approve
+    ```
+
+    * Tears down all Azure resources.
+
+—
+Follow these steps in order and you’ll have a fully automated Blue/Green AKS deployment with Terraform and Jenkins.

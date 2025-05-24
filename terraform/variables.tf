@@ -1,0 +1,10 @@
+variable "resource_group_name" { type = string }
+variable "location"            { type = string }
+variable "prefix"              { type = string }
+variable "address_space"       { type = string }
+variable "subnet_prefixes"     { type = list(string) }
+variable "node_count"          { type = number }
+variable "vm_size"             { type = string }
+variable "blue_ingress_ip"     { type = string }
+variable "green_ingress_ip"    { type = string }
+variable "active_pool"         { type = string }
