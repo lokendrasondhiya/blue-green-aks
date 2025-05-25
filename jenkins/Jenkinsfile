@@ -35,17 +35,7 @@ pipeline {
       }
     }
 
-    stage('Generate SSH Key (for Azure AKS)') {
-      steps {
-        dir('terraform') {
-          sh '''
-            if [ ! -f id_rsa ]; then
-              ssh-keygen -t rsa -b 2048 -f id_rsa -C "terraform@devops" -N ""
-            fi
-          '''
-        }
-      }
-    }
+
 
     stage('Terraform Init & Plan') {
       steps {
