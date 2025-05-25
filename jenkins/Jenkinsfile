@@ -1,9 +1,36 @@
 pipeline {
   agent any
+  environment{
+    // AWS access
+    AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
+    AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+    AWS_DEFAULT_REGION    = 'us-east-1'
+    // AWS S3 bucket and DynamoDB table for Terraform state locking
+    BUCKET_NAME = "my-terraform-remote-state-bucket-007"
+    S3_FOLDER="markerFile"
+    MARKER_FILE_NAME   = ".backend_done"
+    // Azure acces
+    ARM_CLIENT_ID       = credentials('AZURE_CLIENT_ID')
+    ARM_CLIENT_SECRET   = credentials('AZURE_CLIENT_SECRET')
+    ARM_TENANT_ID       = credentials('AZURE_TENANT_ID')
+    ARM_SUBSCRIPTION_ID = credentials('AZURE_SUBSCRIPTION_ID')
+
+}
   stages {
     stage('Checkout') {
       steps { checkout scm }
     }
+    stage('Generate SSH Key (for Azure AKS)') {
+            steps {
+                dir('terraform') {
+                    sh '''
+                    if [ ! -f id_rsa ]; then
+                        ssh-keygen -t rsa -b 2048 -f id_rsa -C "terraform@devops" -N ""
+                    fi
+                    '''
+                }
+            }
+        }
     stage('Terraform Init & Plan') {
       steps {
         dir('terraform') {
